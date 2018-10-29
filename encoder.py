@@ -25,10 +25,12 @@ import cgi
 
 # TODO:
 	# Add more algorithms
-	# Resize Boxes with frame size
 	# Hex/String for input and output
 	# Add the "send to" option
+	# History
 
+	
+history={}
 
 class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorController):
 
@@ -46,13 +48,13 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.setPreferredSize(awt.Dimension(1200,1200))
 		
 		#Values for the combination boxes
-		fromOptions = ['Decode...', 'UTF-7', 'UTF-8', 'URL', 'Base64', 'XML', 'Binary', 'Overlong']
-		toOptions = ['Encode...', 'UTF-7', 'UTF-8', 'URL', 'Base64', 'XML', 'Binary', 'Overlong']
+		algOptions = ['Algorithm...', 'UTF-7', 'UTF-8', 'URL', 'Base64', 'XML', 'Binary', 'Overlong']
 		hashOptions = ['Hash...', 'md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
 		
 		#GUI Components
-		self.jFromMenu = swing.JComboBox(fromOptions)
-		self.jToMenu = swing.JComboBox(toOptions)
+		self.jEncode = swing.JRadioButton('Encode', actionPerformed=self.encodeButton)
+		self.jDecode = swing.JRadioButton('Decode', actionPerformed=self.decodeButton)
+		self.jAlgMenu = swing.JComboBox(algOptions)
 		self.jInput = swing.JTextArea()
 		self.jInputLabel = swing.JLabel()
 		self.jOutput = swing.JTextArea()
@@ -64,35 +66,50 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jString = swing.JRadioButton('String', actionPerformed=self.toString)
 		self.jOutputFormat = swing.ButtonGroup()
 		self.jSendToRequest = swing.JButton('Send to request', actionPerformed=self.sendToRequest)
+		self.jToInput = swing.JButton('Send to Input', actionPerformed=self.toInput)
+		#self.jHistoryLabel = swing.JLabel('History')
+		self.jNextHistory = swing.JButton('>', actionPerformed=self.nextHistory)
+		self.jPreviousHistory = swing.JButton('<', actionPerformed=self.previousHistory)
 		
 		#Add buttons to group
 		self.jOutputFormat.add(self.jString)
 		self.jOutputFormat.add(self.jHex)
-		
+
 		
 		#Configure GUIs
-		self.jFromMenu.setSelectedIndex(0)
-		self.jToMenu.setSelectedIndex(0)
+		
+		self.jEncode.setSelected(True)
+		self.jDecode.setSelected(False)
+		self.jAlgMenu.setSelectedIndex(0)
 		self.jInput.setLineWrap(True)
 		self.jOutput.setLineWrap(True)
 		self.jOutput.setEditable(False)
 		self.jHashMenu.setSelectedIndex(0)
 		self.jString.setSelected(True)
+		#self.jNextHistory.addActionListener(new ActionListener(
 				
 		#Component Locations
-		self.jFromMenu.setBounds(15, 15, 125, 20)
-		self.jToMenu.setBounds(15, 45, 125, 20)
-		self.jHashMenu.setBounds(15, 75, 125, 20)
-		self.jStart.setBounds(15, 105, 125, 20)
-		self.jSendToRequest.setBounds(15, 135, 125, 20)
-		self.jHex.setBounds(15, 165, 55, 20)
-		self.jString.setBounds(75, 165, 65, 20)
-		self.jInput.setBounds(155, 15, 800, 200)
-		self.jOutput.setBounds(155, 225, 800, 200)
+		
+		self.jEncode.setBounds(15, 15, 70, 20)
+		self.jDecode.setBounds(85, 15, 70, 20)
+		self.jAlgMenu.setBounds(15, 45, 140, 25)
+		self.jHashMenu.setBounds(15, 80, 140, 25)
+		self.jStart.setBounds(15, 115, 140, 20)
+		self.jSendToRequest.setBounds(15, 145, 140, 20)
+		self.jHex.setBounds(15, 175, 70, 20)
+		self.jString.setBounds(85, 175, 70, 20)
+		self.jInput.setBounds(165, 15, 800, 200)
+		self.jOutput.setBounds(165, 225, 800, 200)
+		self.jToInput.setBounds(15, 405, 140, 20)
+		#self.jHistoryLabel(15,225,125,20)
+		self.jNextHistory.setBounds(85, 435, 70, 20)
+		self.jPreviousHistory.setBounds(15, 435, 70, 20)
+		
 				
 		#Add components to Panel
-		self._jPanel.add(self.jFromMenu)
-		self._jPanel.add(self.jToMenu)
+		self._jPanel.add(self.jEncode)
+		self._jPanel.add(self.jDecode)
+		self._jPanel.add(self.jAlgMenu)
 		self._jPanel.add(self.jHashMenu)
 		self._jPanel.add(self.jInput)
 		self._jPanel.add(self.jOutput)
@@ -100,6 +117,10 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.add(self.jHex)
 		self._jPanel.add(self.jString)
 		self._jPanel.add(self.jSendToRequest)
+		self._jPanel.add(self.jToInput)
+		#self._jPanel.add(self.jNextHistory)
+		#self._jPanel.add(self.jPreviousHistory)
+		#self._jPanel.add(self.jHistoryLabel)
 
 		callbacks.customizeUiComponent(self._jPanel)
 		callbacks.addSuiteTab(self)
@@ -154,38 +175,43 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 # Perform the requested functions
 	def start(self):
 		# Get the parameters
-		toOption = self.jToMenu.getSelectedIndex()
-		fromOption = self.jFromMenu.getSelectedIndex()
+		alg = self.jAlgMenu.getSelectedIndex()
 		hashOption = self.jHashMenu.getSelectedIndex()
+		if self.jEncode == True:
+			direction = 0
+		else:
+			direction = 1
+		
 		# Encode/Decode without hashing		
 		if hashOption == 0:
-			if (toOption == 0) and (fromOption != 0):
-				self.jOutput.setText(self.doDecode())
-			elif (fromOption == 0) and (toOption != 0):
-				self.jOutput.setText(self.doEncode())
-			else:
-				self.jOutput.setText(self.jInput.getText())
+			if self.jDecode.isSelected():
+				outputText = self.doDecode()
+			elif self.jEncode.isSelected():
+				outputText = self.doEncode()
+			else: 
+				outputText = 'did something wrong'
 		
 		# Encode/Decode and/or hash.
 		elif hashOption != 0:
-			if (toOption == 0) and (fromOption != 0):
-				self.jOutput.setText(self.doHash(self.doDecode()))
-			elif (fromOption == 0) and (toOption != 0):
-				self.jOutput.setText(self.doHash(self.doEncode()))	
+			if (self.jDecode.isSelected()):
+				outputText = self.doHash(self.doDecode())
+			elif (self.jEncode.isSelected()):
+				outputText = self.doHash(self.doEncode())	
 			else:
-				self.jOutput.setText(self.doHash(self.jOutput.getText()))
+				outputText = self.doHash(self.jOutput.getText())
 		else:
-			self.jOutput.setText('did something wrong')
+			outputText = 'did something wrong'
 	
-		self.jToMenu.setSelectedIndex(0)
-		self.jFromMenu.setSelectedIndex(0)
+		#self.jAlgMenu.setSelectedIndex(0)
 		self.jHashMenu.setSelectedIndex(0)
-		self.formatOutput()
+		#self.formatOutput()
+		self.jOutput.setText(outputText)
+		history[len(history)] = {"direction": direction, "alg": alg, "input": self.jInput.getText(), "output": outputText, "hash": hashOption}
 	
 # This part will encode the input. Will add more as needed
 	def doEncode(self):
 		message = str(self.jInput.getText())
-		toAlg = str(self.jToMenu.getSelectedItem())
+		toAlg = str(self.jAlgMenu.getSelectedItem())
 		if toAlg == 'Base64':
 			return base64.b64encode(bytes(message),'utf-8').decode()
 		if toAlg == 'URL':
@@ -204,7 +230,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 # This part will decode the input. Will add more as needed
 	def doDecode(self):
 		message = str(self.jInput.getText())
-		fromAlg = str(self.jFromMenu.getSelectedItem())
+		fromAlg = str(self.jAlgMenu.getSelectedItem())
 		
 		if (fromAlg == 'Plain') or (fromAlg == 'From...'):
 			return message
@@ -312,4 +338,21 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._helpers.analyzeRequest(self.messageText)
 
 		
+		# Sends the output to the input
+	def toInput(self, button):
+		self.jInput.setText(str(self.jOutput.getText()))
+		
+
+	
+	def previousHistory(self, button):
+		return('previous')
+	def nextHistory(self, button):
+		return('next')
+	
+	def encodeButton(self, button):
+		self.jDecode.setSelected(False)
+	
+	def decodeButton(self, button):
+		self.jEncode.setSelected(False)
+
 
