@@ -30,7 +30,10 @@ import cgi
 	# History
 
 	
-history={}
+
+history = {}
+
+historyIndex = 0
 
 class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorController):
 
@@ -118,8 +121,8 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.add(self.jString)
 		self._jPanel.add(self.jSendToRequest)
 		self._jPanel.add(self.jToInput)
-		#self._jPanel.add(self.jNextHistory)
-		#self._jPanel.add(self.jPreviousHistory)
+		self._jPanel.add(self.jNextHistory)
+		self._jPanel.add(self.jPreviousHistory)
 		#self._jPanel.add(self.jHistoryLabel)
 
 		callbacks.customizeUiComponent(self._jPanel)
@@ -174,10 +177,12 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		
 # Perform the requested functions
 	def start(self):
+		global history
+		global historyIndex
 		# Get the parameters
 		alg = self.jAlgMenu.getSelectedIndex()
 		hashOption = self.jHashMenu.getSelectedIndex()
-		if self.jEncode == True:
+		if self.jEncode.isSelected() == True:
 			direction = 0
 		else:
 			direction = 1
@@ -207,6 +212,9 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		#self.formatOutput()
 		self.jOutput.setText(outputText)
 		history[len(history)] = {"direction": direction, "alg": alg, "input": self.jInput.getText(), "output": outputText, "hash": hashOption}
+		historyIndex = len(history) -1
+		print(direction)
+		
 	
 # This part will encode the input. Will add more as needed
 	def doEncode(self):
@@ -325,7 +333,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 			
 	
 	def sendToRequest(self, button):
-		if (self.jToMenu.getSelectedIndex() == 0) and (self.jFromMenu.getSelectedIndex() == 0) and (self.jHashMenu.getSelectedIndex() == 0):
+		if (self.jToMenu.getSelectedIndex() == 0) and (self.AlgMenu.getSelectedIndex() == 0) and (self.jHashMenu.getSelectedIndex() == 0):
 			output = self.jOutput.getText()
 		else:
 			return
@@ -345,9 +353,42 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 
 	
 	def previousHistory(self, button):
-		return('previous')
+		global history
+		global historyIndex
+		if historyIndex > 0:
+			historyIndex = historyIndex - 1
+			if history[historyIndex]['direction'] == 0:
+				self.jEncode.setSelected(True)
+				self.jDecode.setSelected(False)
+			elif history[historyIndex]['direction'] == 1:
+				self.jEncode.setSelected(False)
+				self.jDecode.setSelected(True)
+			self.jHashMenu.setSelectedIndex(history[historyIndex]['hash'])
+			self.jAlgMenu.setSelectedIndex(history[historyIndex]['alg'])
+			self.jInput.setText(history[historyIndex]['input'])
+			self.jOutput.setText(history[historyIndex]['output'])
+				
+		else:
+			print('no more history')
+		
 	def nextHistory(self, button):
-		return('next')
+		global history
+		global historyIndex
+		if historyIndex < len(history) - 1:
+			historyIndex = historyIndex + 1
+			if history[historyIndex]['direction'] == 0:
+				self.jEncode.setSelected(True)
+				self.jDecode.setSelected(False)
+			elif history[historyIndex]['direction'] == 1:
+				self.jEncode.setSelected(False)
+				self.jDecode.setSelected(True)
+			self.jHashMenu.setSelectedIndex(history[historyIndex]['hash'])
+			self.jAlgMenu.setSelectedIndex(history[historyIndex]['alg'])
+			self.jInput.setText(history[historyIndex]['input'])
+			self.jOutput.setText(history[historyIndex]['output'])
+				
+		else:
+			print('newest')
 	
 	def encodeButton(self, button):
 		self.jDecode.setSelected(False)
