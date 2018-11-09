@@ -20,6 +20,7 @@ import binascii
 import urllib
 import re
 import cgi
+import zlib
 #from xml.sax.saxutils import unescape
 
 
@@ -27,12 +28,8 @@ import cgi
 	# Add more algorithms
 	# Hex/String for input and output
 	# Add the "send to" option
-	# History
-
-	
 
 history = {}
-
 historyIndex = 0
 
 class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorController):
@@ -51,7 +48,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.setPreferredSize(awt.Dimension(1200,1200))
 		
 		#Values for the combination boxes
-		algOptions = ['Algorithm...', 'UTF-7', 'UTF-8', 'URL', 'Base64', 'XML', 'Binary', 'Overlong']
+		algOptions = ['Algorithm...', 'UTF-7', 'UTF-8', 'URL', 'Base64', 'XML', 'Binary', 'Overlong', 'zlib deflate']
 		hashOptions = ['Hash...', 'md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512']
 		
 		#GUI Components
@@ -61,6 +58,8 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jInput = swing.JTextArea()
 		self.jInputLabel = swing.JLabel()
 		self.jOutput = swing.JTextArea()
+		self.jInputScroll = swing.JScrollPane(self.jOutput)
+		self.jOutputScroll = swing.JScrollPane(self.jOutput)
 		self.jOutputLabel = swing.JLabel()
 		self.jHashLabel = swing.JLabel()
 		self.jHashMenu = swing.JComboBox(hashOptions)
@@ -74,9 +73,15 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jNextHistory = swing.JButton('>', actionPerformed=self.nextHistory)
 		self.jPreviousHistory = swing.JButton('<', actionPerformed=self.previousHistory)
 		
+		#Input and Ouptut scroll
+		self.jOutputScroll = swing.JScrollPane(swing.JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,swing.JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+		self.jOutputScroll.viewport.view = self.jOutput
+		self.jInputScroll = swing.JScrollPane(swing.JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,swing.JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+		self.jInputScroll.viewport.view = self.jInput
 		#Add buttons to group
 		self.jOutputFormat.add(self.jString)
 		self.jOutputFormat.add(self.jHex)
+
 
 		
 		#Configure GUIs
@@ -101,8 +106,8 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jSendToRequest.setBounds(15, 145, 140, 20)
 		self.jHex.setBounds(15, 175, 70, 20)
 		self.jString.setBounds(85, 175, 70, 20)
-		self.jInput.setBounds(165, 15, 800, 200)
-		self.jOutput.setBounds(165, 225, 800, 200)
+		self.jInputScroll.setBounds(165, 15, 800, 200)
+		self.jOutputScroll.setBounds(165, 225, 800, 200)
 		self.jToInput.setBounds(15, 405, 140, 20)
 		#self.jHistoryLabel(15,225,125,20)
 		self.jNextHistory.setBounds(85, 435, 70, 20)
@@ -114,8 +119,8 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.add(self.jDecode)
 		self._jPanel.add(self.jAlgMenu)
 		self._jPanel.add(self.jHashMenu)
-		self._jPanel.add(self.jInput)
-		self._jPanel.add(self.jOutput)
+		self._jPanel.add(self.jInputScroll)
+		self._jPanel.add(self.jOutputScroll)
 		self._jPanel.add(self.jStart)
 		self._jPanel.add(self.jHex)
 		self._jPanel.add(self.jString)
@@ -124,6 +129,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.add(self.jNextHistory)
 		self._jPanel.add(self.jPreviousHistory)
 		#self._jPanel.add(self.jHistoryLabel)
+		
 
 		callbacks.customizeUiComponent(self._jPanel)
 		callbacks.addSuiteTab(self)
@@ -213,12 +219,15 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jOutput.setText(outputText)
 		history[len(history)] = {"direction": direction, "alg": alg, "input": self.jInput.getText(), "output": outputText, "hash": hashOption}
 		historyIndex = len(history) -1
-		print(direction)
+		
 		
 	
 # This part will encode the input. Will add more as needed
 	def doEncode(self):
-		message = str(self.jInput.getText())
+		try:
+			message = self.jInput.getText()
+		except:
+			message = self.jInput.getText().encode('utf-16')
 		toAlg = str(self.jAlgMenu.getSelectedItem())
 		if toAlg == 'Base64':
 			return base64.b64encode(bytes(message),'utf-8').decode()
@@ -234,10 +243,15 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 			return self.toBinary(message)
 		if toAlg == 'Overlong':
 			return self.toOverlong(message)
+		if toAlg == 'zlib deflate':
+			return self.toZlib(message)
 		
 # This part will decode the input. Will add more as needed
 	def doDecode(self):
-		message = str(self.jInput.getText())
+		try:
+			message = self.jInput.getText()
+		except:
+			message = self.jInput.getText().encode('utf-16')
 		fromAlg = str(self.jAlgMenu.getSelectedItem())
 		
 		if (fromAlg == 'Plain') or (fromAlg == 'From...'):
@@ -256,11 +270,13 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 			return chr(int(message,2))
 		if fromAlg == 'Overlong':
 			return self.fromOverlong(message)
+		if fromAlg == 'zlib deflate':
+			return self.fromZlib(message)
 			
 # Does the hashing part
 # Want to find a way to use the variable to call the function
 	def doHash(self, x):
-		hashAlg = str(self.jHashMenu.getSelectedItem())
+		hashAlg = self.jHashMenu.getSelectedItem().encode('utf-16')
 		if hashAlg == 'md5':
 			return hashlib.md5(x).hexdigest()
 		elif hashAlg == 'sha1':
@@ -348,7 +364,10 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		
 		# Sends the output to the input
 	def toInput(self, button):
-		self.jInput.setText(str(self.jOutput.getText()))
+		try:
+			self.jInput.setText(self.jOutput.getText())
+		except:
+			self.jInput.setText(self.jOutput.getText().encode('utf-16', errors='ignore'))
 		
 
 	
@@ -397,3 +416,14 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jEncode.setSelected(False)
 
 
+	def toZlib(self, button):
+		message = self.jInput.getText()	
+		messageOut = ""
+		zlib_compress=zlib.compressobj(-1, zlib.DEFLATED, -15)
+		messageOut = zlib_compress.compress(message)
+		messageOut += zlib_compress.flush()
+		return base64.b64encode(messageOut)
+	 
+	def fromZlib(self, button):
+		message = self.jInput.getText()
+		return zlib.decompress(base64.b64decode(message), -8)
