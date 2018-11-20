@@ -1,4 +1,5 @@
 from burp import IBurpExtender
+from burp import IIntruderPayloadProcessor
 from burp import ITab
 from burp import IHttpListener
 from burp import IMessageEditorController
@@ -28,11 +29,15 @@ import zlib
 	# Add more algorithms
 	# Hex/String for input and output
 	# Add the "send to" option
+	# History
+
+	
 
 history = {}
+
 historyIndex = 0
 
-class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorController):
+class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorController, IIntruderPayloadProcessor):
 
 	
 
@@ -41,6 +46,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._helpers = callbacks.getHelpers()
 		callbacks.setExtensionName("Encoder")
 		callbacks.registerContextMenuFactory(self)
+		callbacks.registerIntruderPayloadProcessor(self)
 		
 		#Create Jpanel
 		self._jPanel = swing.JPanel()
@@ -69,9 +75,9 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jOutputFormat = swing.ButtonGroup()
 		self.jSendToRequest = swing.JButton('Send to request', actionPerformed=self.sendToRequest)
 		self.jToInput = swing.JButton('Send to Input', actionPerformed=self.toInput)
-		#self.jHistoryLabel = swing.JLabel('History')
 		self.jNextHistory = swing.JButton('>', actionPerformed=self.nextHistory)
 		self.jPreviousHistory = swing.JButton('<', actionPerformed=self.previousHistory)
+		
 		
 		#Input and Ouptut scroll
 		self.jOutputScroll = swing.JScrollPane(swing.JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,swing.JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED)
@@ -94,7 +100,7 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jOutput.setEditable(False)
 		self.jHashMenu.setSelectedIndex(0)
 		self.jString.setSelected(True)
-		#self.jNextHistory.addActionListener(new ActionListener(
+		
 				
 		#Component Locations
 		
@@ -109,9 +115,8 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jInputScroll.setBounds(165, 15, 800, 200)
 		self.jOutputScroll.setBounds(165, 225, 800, 200)
 		self.jToInput.setBounds(15, 405, 140, 20)
-		#self.jHistoryLabel(15,225,125,20)
-		self.jNextHistory.setBounds(85, 435, 70, 20)
-		self.jPreviousHistory.setBounds(15, 435, 70, 20)
+		self.jNextHistory.setBounds(85, 465, 70, 20)
+		self.jPreviousHistory.setBounds(15, 465, 70, 20)
 		
 				
 		#Add components to Panel
@@ -128,7 +133,6 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._jPanel.add(self.jToInput)
 		self._jPanel.add(self.jNextHistory)
 		self._jPanel.add(self.jPreviousHistory)
-		#self._jPanel.add(self.jHistoryLabel)
 		
 
 		callbacks.customizeUiComponent(self._jPanel)
@@ -139,7 +143,23 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self._outputHex = False
 		
 		return
-
+	# Intruder payload generator
+	
+	def getGeneratorName(self):
+		return "Encoder"
+		
+	def createNewInstance(self, attack):
+		return IntruderPayloadGenerator()
+		
+	def getProcessorName(self):
+		return "Deflate"
+		
+	def processPayload(self, currentPayload, originalPayload, baseValue):
+		print('test')
+		return self.toZlib(currentPayload)
+		
+		
+		
 	# implement ITab 
 	def getTabCaption(self):
 		return "Encoder"
@@ -416,14 +436,20 @@ class BurpExtender(IBurpExtender, ITab, IContextMenuFactory, IMessageEditorContr
 		self.jEncode.setSelected(False)
 
 
-	def toZlib(self, button):
-		message = self.jInput.getText()	
+	def toZlib(self, message):
+		#message = self.jInput.getText()	
 		messageOut = ""
 		zlib_compress=zlib.compressobj(-1, zlib.DEFLATED, -15)
 		messageOut = zlib_compress.compress(message)
 		messageOut += zlib_compress.flush()
 		return base64.b64encode(messageOut)
 	 
-	def fromZlib(self, button):
-		message = self.jInput.getText()
+	def fromZlib(self, message):
+		#message = self.jInput.getText()
 		return zlib.decompress(base64.b64decode(message), -8)
+		
+		
+		
+		
+		
+		
